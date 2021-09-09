@@ -18,9 +18,14 @@ class Function(object):
     
     def __del__(self):
         self.unmapAllMem()
+    
+    def cleanup(self):
+        self.emu.restore()
+        self.emu.preStack()
 
     def test(self):
         for case in self.testcases:
+            self.cleanup()
             if not self.checkOne(case):
                 return False
             self.clearMem()

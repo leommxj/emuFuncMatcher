@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-from emu import EmuArm, EmuX86
+from emu import EmuArm, EmuX86, EmuMips
 from glibc import Fstrncpy, Fmemcpy, Fstrncat, Fmempcpy, Fstpncpy, Fmemset, Fstrlen
 from tqdm import tqdm
 from multiprocessing import Pool
@@ -32,15 +32,12 @@ def findArchInfo(idbpath):
             bits = 32
         else:
             bits = 16
-
         try:
             is_be = inf.is_be()
         except:
             is_be = inf.mf
         endian = "big" if is_be else "little"
         return (inf.procname, bits, endian)
-
-
 
 def initProcEmu(idbpath, initEmu):
     global e
@@ -52,28 +49,45 @@ def initProcEmu(idbpath, initEmu):
 def testFunc(function, func):
     global e
     t = function(e, func.startEA, func.endEA)
-    e.resetRegs()
-    e.preStack()
     if t.test():
         tqdm.write('{}: 0x{:x}'.format(t.name, func.startEA))
 
-def main():
-    idbpath = sys.argv[1]
+def genInitEmu(idbpath):
     arch, bitness, endian = findArchInfo(idbpath)
     if arch == 'ARM':
         if bitness == 32 and endian == 'little':
-            initEmu = lambda :EmuArm(32)
+            initEmu = lambda: EmuArm(32)
         else:
             raise Exception('Unimplement')
     elif arch in ('metapc','8086','80286r','80286p','80386r','80386p','80486r','80486p','80586r','80586p','80686p','k62','p2','p3','athlon','p4','8085'):
         if bitness == 64 and endian == 'little':
-            initEmu = lambda :EmuX86(64)
+            initEmu = lambda: EmuX86(64)
         else:
             raise Exception('Unimplement')
+    elif arch == 'mipsl' and endian == 'little':
+        if bitness == 32:
+            initEmu = lambda: EmuMips(32, endian)
+        elif bitness == 64:
+            initEmu = lambda: EmuMips(64, endian)
+        else:
+            raise Exception('Unknown Arch bitness combination')
+    elif arch == 'mipsb' and endian == 'big':
+        if bitness == 32:
+            initEmu = lambda: EmuMips(32, endian)
+        elif bitness == 64:
+            initEmu = lambda: EmuMips(64, endian)
+        else:
+            raise Exception('Unknown Arch bitness combination')
     else:
         raise Exception('Unimplement')
+    return initEmu
+
+def main():
+    idbpath = sys.argv[1]
+    initEmu = genInitEmu(idbpath)
     libfuncs = [Fstrncpy, Fmemcpy, Fstrncat, Fmempcpy, Fstpncpy, Fmemset, Fstrlen]
     funcs = findAllFunction(idbpath)
+    print('there are {} functions in idb, and {} lib functions to match'.format(len(funcs), len(libfuncs)))
     with Pool(processes=12, initializer=initProcEmu, initargs=(idbpath, initEmu)) as p:
         for f in libfuncs:
             it = tqdm(p.imap(partial(testFunc, f), funcs), total=len(funcs))

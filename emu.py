@@ -14,7 +14,8 @@ class Emu(object):
         self._arch = arch
         self._pageSize = pageSize
         self._initRegs()
-        self.initUc()
+        self._initUc()
+        self._context = self.target.context_save()
         self.initHook()
         self.stack = None
         self.logger = logging.getLogger('Emu')
@@ -30,17 +31,20 @@ class Emu(object):
             self.logger.debug('run into Error @ 0x{:x}, Error:'.format(self.readReg('pc')))
             self.logger.debug(e)
 
-    def initUc(self):
+    def _initUc(self):
         raise Exception('need implement')
     
     def initHook(self):
         self.target.hook_add(uc.UC_HOOK_MEM_READ_UNMAPPED | uc.UC_HOOK_MEM_WRITE_UNMAPPED |uc.UC_HOOK_MEM_FETCH_UNMAPPED, self._hookMemInvalid, ())
         self.target.hook_add(uc.UC_HOOK_INSN_INVALID, self._hookInsnInvalid, ())
+    
+    def restore(self):
+        self.target.context_restore(self._context)
 
     def preStack(self):
         if self.stack is None:
-            addr = self.allocMem(0x20000)
-            mid = addr + 0x10000
+            addr = self.allocMem(0x40000)
+            mid = addr + 0x20000
             self.writeReg('sp', mid)
             self.stack = mid
         else:
@@ -196,12 +200,11 @@ class Emu(object):
     def _hookInsnInvalid(self, data, a):
         self.logger.debug('Invalid Insn {}, {}'.format(data, a))
 
-
 class EmuArm(Emu):
     def __init__(self, ptrSize, **kwargs):
         super().__init__(uc.UC_ARCH_ARM, ptrSize, **kwargs)
 
-    def initUc(self):
+    def _initUc(self):
         self.target = uc.Uc(self._arch, uc.UC_MODE_ARM)
     
     def getArgv(self):
@@ -391,10 +394,10 @@ class EmuArm(Emu):
 CC_CDECL = 1
 class EmuX86(Emu):
     def __init__(self, ptrSize, convention=CC_CDECL, pageSize=4096, **kwargs):
-        super().__init__(uc.UC_ARCH_X86, ptrSize, pageSize=pageSize, **kwargs)
         self._convention = CC_CDECL
+        super().__init__(uc.UC_ARCH_X86, ptrSize, pageSize=pageSize, **kwargs)
 
-    def initUc(self):
+    def _initUc(self):
         if self._ptrSize == 16:
             self.target = uc.Uc(uc.UC_ARCH_X86, uc.UC_MODE_16)
         elif self._ptrSize == 32:
@@ -515,3 +518,205 @@ class EmuX86(Emu):
             "r12b": uc.x86_const.UC_X86_REG_R12, "r13b": uc.x86_const.UC_X86_REG_R13,
             "r14b": uc.x86_const.UC_X86_REG_R14, "r15b": uc.x86_const.UC_X86_REG_R15,
             "ret": uc.x86_const.UC_X86_REG_RAX, "rip": uc.x86_const.UC_X86_REG_RIP}
+
+
+class EmuMips(Emu):
+    def __init__(self, ptrSize, endian='little', pageSize=4096 , **kwargs):
+        self._endian = endian
+        super().__init__(uc.UC_ARCH_MIPS, ptrSize, pageSize=pageSize, **kwargs)
+
+    def _initUc(self):
+        if self._ptrSize == 32 and self._endian =='little':
+            self.target = uc.Uc(self._arch, uc.UC_MODE_MIPS32|uc.UC_MODE_LITTLE_ENDIAN)
+        elif self._ptrSize == 32 and self._endian =='big':
+            self.target = uc.Uc(self._arch, uc.UC_MODE_MIPS32|uc.UC_MODE_BIG_ENDIAN)
+        elif self._ptrSize == 64 and self._endian =='little':
+            self.target = uc.Uc(self._arch, uc.UC_MODE_MIPS64|uc.UC_MODE_LITTLE_ENDIAN)
+        elif self._ptrSize == 64 and self._endian =='big':
+            self.target = uc.Uc(self._arch, uc.UC_MODE_MIPS64|uc.UC_MODE_BIG_ENDIAN)
+        else:
+            raise Exception('Unknown Arch')
+    
+    def getArgv(self):
+        raise Exception('Unimplement')
+    
+    def setArgv(self, num, value):
+        argRegs = ('a0', 'a1', 'a2', 'a3')
+        if num < len(argRegs):
+            self.writeReg(argRegs[num], value)
+        else:
+            sp = self.readReg('sp')
+            num = num - len(argRegs)
+            self.writeMem(sp+(self._ptrSize/8*num), struct.pack('<I', value))
+
+    def getRet(self):
+        return self.readReg('v0')
+
+    def setRetAddr(self, addr):
+        self.writeReg('ra', addr)
+    
+    def _initRegs(self):
+        self.regs = {"pc": uc.mips_const.UC_MIPS_REG_PC, "PC": uc.mips_const.UC_MIPS_REG_PC,
+                    "0": uc.mips_const.UC_MIPS_REG_0, "1": uc.mips_const.UC_MIPS_REG_1,
+                    "2": uc.mips_const.UC_MIPS_REG_2, "3": uc.mips_const.UC_MIPS_REG_3,
+                    "4": uc.mips_const.UC_MIPS_REG_4, "5": uc.mips_const.UC_MIPS_REG_5,
+                    "6": uc.mips_const.UC_MIPS_REG_6, "7": uc.mips_const.UC_MIPS_REG_7,
+                    "8": uc.mips_const.UC_MIPS_REG_8, "9": uc.mips_const.UC_MIPS_REG_9,
+                    "10": uc.mips_const.UC_MIPS_REG_10, "11": uc.mips_const.UC_MIPS_REG_11,
+                    "12": uc.mips_const.UC_MIPS_REG_12, "13": uc.mips_const.UC_MIPS_REG_13,
+                    "14": uc.mips_const.UC_MIPS_REG_14, "15": uc.mips_const.UC_MIPS_REG_15,
+                    "16": uc.mips_const.UC_MIPS_REG_16, "17": uc.mips_const.UC_MIPS_REG_17,
+                    "18": uc.mips_const.UC_MIPS_REG_18, "19": uc.mips_const.UC_MIPS_REG_19,
+                    "20": uc.mips_const.UC_MIPS_REG_20, "21": uc.mips_const.UC_MIPS_REG_21,
+                    "22": uc.mips_const.UC_MIPS_REG_22, "23": uc.mips_const.UC_MIPS_REG_23,
+                    "24": uc.mips_const.UC_MIPS_REG_24, "25": uc.mips_const.UC_MIPS_REG_25,
+                    "26": uc.mips_const.UC_MIPS_REG_26, "27": uc.mips_const.UC_MIPS_REG_27,
+                    "28": uc.mips_const.UC_MIPS_REG_28, "29": uc.mips_const.UC_MIPS_REG_29,
+                    "30": uc.mips_const.UC_MIPS_REG_30, "31": uc.mips_const.UC_MIPS_REG_31,
+                    "dspccond": uc.mips_const.UC_MIPS_REG_DSPCCOND, "DSPCCOND": uc.mips_const.UC_MIPS_REG_DSPCCOND,
+                    "dspcarry": uc.mips_const.UC_MIPS_REG_DSPCARRY, "DSPCARRY": uc.mips_const.UC_MIPS_REG_DSPCARRY,
+                    "dspefi": uc.mips_const.UC_MIPS_REG_DSPEFI, "DSPEFI": uc.mips_const.UC_MIPS_REG_DSPEFI,
+                    "dspoutflag": uc.mips_const.UC_MIPS_REG_DSPOUTFLAG, "DSPOUTFLAG": uc.mips_const.UC_MIPS_REG_DSPOUTFLAG,
+                    "dspoutflag16_19": uc.mips_const.UC_MIPS_REG_DSPOUTFLAG16_19, "DSPOUTFLAG16_19": uc.mips_const.UC_MIPS_REG_DSPOUTFLAG16_19,
+                    "dspoutflag20": uc.mips_const.UC_MIPS_REG_DSPOUTFLAG20, "DSPOUTFLAG20": uc.mips_const.UC_MIPS_REG_DSPOUTFLAG20,
+                    "dspoutflag21": uc.mips_const.UC_MIPS_REG_DSPOUTFLAG21, "DSPOUTFLAG21": uc.mips_const.UC_MIPS_REG_DSPOUTFLAG21,
+                    "dspoutflag22": uc.mips_const.UC_MIPS_REG_DSPOUTFLAG22, "DSPOUTFLAG22": uc.mips_const.UC_MIPS_REG_DSPOUTFLAG22,
+                    "dspoutflag23": uc.mips_const.UC_MIPS_REG_DSPOUTFLAG23, "DSPOUTFLAG23": uc.mips_const.UC_MIPS_REG_DSPOUTFLAG23,
+                    "dsppos": uc.mips_const.UC_MIPS_REG_DSPPOS, "DSPPOS": uc.mips_const.UC_MIPS_REG_DSPPOS,
+                    "dspscount": uc.mips_const.UC_MIPS_REG_DSPSCOUNT, "DSPSCOUNT": uc.mips_const.UC_MIPS_REG_DSPSCOUNT,
+                    "ac0": uc.mips_const.UC_MIPS_REG_AC0, "AC0": uc.mips_const.UC_MIPS_REG_AC0,
+                    "ac1": uc.mips_const.UC_MIPS_REG_AC1, "AC1": uc.mips_const.UC_MIPS_REG_AC1,
+                    "ac2": uc.mips_const.UC_MIPS_REG_AC2, "AC2": uc.mips_const.UC_MIPS_REG_AC2,
+                    "ac3": uc.mips_const.UC_MIPS_REG_AC3, "AC3": uc.mips_const.UC_MIPS_REG_AC3,
+                    "cc0": uc.mips_const.UC_MIPS_REG_CC0, "CC0": uc.mips_const.UC_MIPS_REG_CC0,
+                    "cc1": uc.mips_const.UC_MIPS_REG_CC1, "CC1": uc.mips_const.UC_MIPS_REG_CC1,
+                    "cc2": uc.mips_const.UC_MIPS_REG_CC2, "CC2": uc.mips_const.UC_MIPS_REG_CC2,
+                    "cc3": uc.mips_const.UC_MIPS_REG_CC3, "CC3": uc.mips_const.UC_MIPS_REG_CC3,
+                    "cc4": uc.mips_const.UC_MIPS_REG_CC4, "CC4": uc.mips_const.UC_MIPS_REG_CC4,
+                    "cc5": uc.mips_const.UC_MIPS_REG_CC5, "CC5": uc.mips_const.UC_MIPS_REG_CC5,
+                    "cc6": uc.mips_const.UC_MIPS_REG_CC6, "CC6": uc.mips_const.UC_MIPS_REG_CC6,
+                    "cc7": uc.mips_const.UC_MIPS_REG_CC7, "CC7": uc.mips_const.UC_MIPS_REG_CC7,
+                    "f0": uc.mips_const.UC_MIPS_REG_F0, "F0": uc.mips_const.UC_MIPS_REG_F0,
+                    "f1": uc.mips_const.UC_MIPS_REG_F1, "F1": uc.mips_const.UC_MIPS_REG_F1,
+                    "f2": uc.mips_const.UC_MIPS_REG_F2, "F2": uc.mips_const.UC_MIPS_REG_F2,
+                    "f3": uc.mips_const.UC_MIPS_REG_F3, "F3": uc.mips_const.UC_MIPS_REG_F3,
+                    "f4": uc.mips_const.UC_MIPS_REG_F4, "F4": uc.mips_const.UC_MIPS_REG_F4,
+                    "f5": uc.mips_const.UC_MIPS_REG_F5, "F5": uc.mips_const.UC_MIPS_REG_F5,
+                    "f6": uc.mips_const.UC_MIPS_REG_F6, "F6": uc.mips_const.UC_MIPS_REG_F6,
+                    "f7": uc.mips_const.UC_MIPS_REG_F7, "F7": uc.mips_const.UC_MIPS_REG_F7,
+                    "f8": uc.mips_const.UC_MIPS_REG_F8, "F8": uc.mips_const.UC_MIPS_REG_F8,
+                    "f9": uc.mips_const.UC_MIPS_REG_F9, "F9": uc.mips_const.UC_MIPS_REG_F9,
+                    "f10": uc.mips_const.UC_MIPS_REG_F10, "F10": uc.mips_const.UC_MIPS_REG_F10,
+                    "f11": uc.mips_const.UC_MIPS_REG_F11, "F11": uc.mips_const.UC_MIPS_REG_F11,
+                    "f12": uc.mips_const.UC_MIPS_REG_F12, "F12": uc.mips_const.UC_MIPS_REG_F12,
+                    "f13": uc.mips_const.UC_MIPS_REG_F13, "F13": uc.mips_const.UC_MIPS_REG_F13,
+                    "f14": uc.mips_const.UC_MIPS_REG_F14, "F14": uc.mips_const.UC_MIPS_REG_F14,
+                    "f15": uc.mips_const.UC_MIPS_REG_F15, "F15": uc.mips_const.UC_MIPS_REG_F15,
+                    "f16": uc.mips_const.UC_MIPS_REG_F16, "F16": uc.mips_const.UC_MIPS_REG_F16,
+                    "f17": uc.mips_const.UC_MIPS_REG_F17, "F17": uc.mips_const.UC_MIPS_REG_F17,
+                    "f18": uc.mips_const.UC_MIPS_REG_F18, "F18": uc.mips_const.UC_MIPS_REG_F18,
+                    "f19": uc.mips_const.UC_MIPS_REG_F19, "F19": uc.mips_const.UC_MIPS_REG_F19,
+                    "f20": uc.mips_const.UC_MIPS_REG_F20, "F20": uc.mips_const.UC_MIPS_REG_F20,
+                    "f21": uc.mips_const.UC_MIPS_REG_F21, "F21": uc.mips_const.UC_MIPS_REG_F21,
+                    "f22": uc.mips_const.UC_MIPS_REG_F22, "F22": uc.mips_const.UC_MIPS_REG_F22,
+                    "f23": uc.mips_const.UC_MIPS_REG_F23, "F23": uc.mips_const.UC_MIPS_REG_F23,
+                    "f24": uc.mips_const.UC_MIPS_REG_F24, "F24": uc.mips_const.UC_MIPS_REG_F24,
+                    "f25": uc.mips_const.UC_MIPS_REG_F25, "F25": uc.mips_const.UC_MIPS_REG_F25,
+                    "f26": uc.mips_const.UC_MIPS_REG_F26, "F26": uc.mips_const.UC_MIPS_REG_F26,
+                    "f27": uc.mips_const.UC_MIPS_REG_F27, "F27": uc.mips_const.UC_MIPS_REG_F27,
+                    "f28": uc.mips_const.UC_MIPS_REG_F28, "F28": uc.mips_const.UC_MIPS_REG_F28,
+                    "f29": uc.mips_const.UC_MIPS_REG_F29, "F29": uc.mips_const.UC_MIPS_REG_F29,
+                    "f30": uc.mips_const.UC_MIPS_REG_F30, "F30": uc.mips_const.UC_MIPS_REG_F30,
+                    "f31": uc.mips_const.UC_MIPS_REG_F31, "F31": uc.mips_const.UC_MIPS_REG_F31,
+                    "fcc0": uc.mips_const.UC_MIPS_REG_FCC0, "FCC0": uc.mips_const.UC_MIPS_REG_FCC0,
+                    "fcc1": uc.mips_const.UC_MIPS_REG_FCC1, "FCC1": uc.mips_const.UC_MIPS_REG_FCC1,
+                    "fcc2": uc.mips_const.UC_MIPS_REG_FCC2, "FCC2": uc.mips_const.UC_MIPS_REG_FCC2,
+                    "fcc3": uc.mips_const.UC_MIPS_REG_FCC3, "FCC3": uc.mips_const.UC_MIPS_REG_FCC3,
+                    "fcc4": uc.mips_const.UC_MIPS_REG_FCC4, "FCC4": uc.mips_const.UC_MIPS_REG_FCC4,
+                    "fcc5": uc.mips_const.UC_MIPS_REG_FCC5, "FCC5": uc.mips_const.UC_MIPS_REG_FCC5,
+                    "fcc6": uc.mips_const.UC_MIPS_REG_FCC6, "FCC6": uc.mips_const.UC_MIPS_REG_FCC6,
+                    "fcc7": uc.mips_const.UC_MIPS_REG_FCC7, "FCC7": uc.mips_const.UC_MIPS_REG_FCC7,
+                    "w0": uc.mips_const.UC_MIPS_REG_W0, "W0": uc.mips_const.UC_MIPS_REG_W0,
+                    "w1": uc.mips_const.UC_MIPS_REG_W1, "W1": uc.mips_const.UC_MIPS_REG_W1,
+                    "w2": uc.mips_const.UC_MIPS_REG_W2, "W2": uc.mips_const.UC_MIPS_REG_W2,
+                    "w3": uc.mips_const.UC_MIPS_REG_W3, "W3": uc.mips_const.UC_MIPS_REG_W3,
+                    "w4": uc.mips_const.UC_MIPS_REG_W4, "W4": uc.mips_const.UC_MIPS_REG_W4,
+                    "w5": uc.mips_const.UC_MIPS_REG_W5, "W5": uc.mips_const.UC_MIPS_REG_W5,
+                    "w6": uc.mips_const.UC_MIPS_REG_W6, "W6": uc.mips_const.UC_MIPS_REG_W6,
+                    "w7": uc.mips_const.UC_MIPS_REG_W7, "W7": uc.mips_const.UC_MIPS_REG_W7,
+                    "w8": uc.mips_const.UC_MIPS_REG_W8, "W8": uc.mips_const.UC_MIPS_REG_W8,
+                    "w9": uc.mips_const.UC_MIPS_REG_W9, "W9": uc.mips_const.UC_MIPS_REG_W9,
+                    "w10": uc.mips_const.UC_MIPS_REG_W10, "W10": uc.mips_const.UC_MIPS_REG_W10,
+                    "w11": uc.mips_const.UC_MIPS_REG_W11, "W11": uc.mips_const.UC_MIPS_REG_W11,
+                    "w12": uc.mips_const.UC_MIPS_REG_W12, "W12": uc.mips_const.UC_MIPS_REG_W12,
+                    "w13": uc.mips_const.UC_MIPS_REG_W13, "W13": uc.mips_const.UC_MIPS_REG_W13,
+                    "w14": uc.mips_const.UC_MIPS_REG_W14, "W14": uc.mips_const.UC_MIPS_REG_W14,
+                    "w15": uc.mips_const.UC_MIPS_REG_W15, "W15": uc.mips_const.UC_MIPS_REG_W15,
+                    "w16": uc.mips_const.UC_MIPS_REG_W16, "W16": uc.mips_const.UC_MIPS_REG_W16,
+                    "w17": uc.mips_const.UC_MIPS_REG_W17, "W17": uc.mips_const.UC_MIPS_REG_W17,
+                    "w18": uc.mips_const.UC_MIPS_REG_W18, "W18": uc.mips_const.UC_MIPS_REG_W18,
+                    "w19": uc.mips_const.UC_MIPS_REG_W19, "W19": uc.mips_const.UC_MIPS_REG_W19,
+                    "w20": uc.mips_const.UC_MIPS_REG_W20, "W20": uc.mips_const.UC_MIPS_REG_W20,
+                    "w21": uc.mips_const.UC_MIPS_REG_W21, "W21": uc.mips_const.UC_MIPS_REG_W21,
+                    "w22": uc.mips_const.UC_MIPS_REG_W22, "W22": uc.mips_const.UC_MIPS_REG_W22,
+                    "w23": uc.mips_const.UC_MIPS_REG_W23, "W23": uc.mips_const.UC_MIPS_REG_W23,
+                    "w24": uc.mips_const.UC_MIPS_REG_W24, "W24": uc.mips_const.UC_MIPS_REG_W24,
+                    "w25": uc.mips_const.UC_MIPS_REG_W25, "W25": uc.mips_const.UC_MIPS_REG_W25,
+                    "w26": uc.mips_const.UC_MIPS_REG_W26, "W26": uc.mips_const.UC_MIPS_REG_W26,
+                    "w27": uc.mips_const.UC_MIPS_REG_W27, "W27": uc.mips_const.UC_MIPS_REG_W27,
+                    "w28": uc.mips_const.UC_MIPS_REG_W28, "W28": uc.mips_const.UC_MIPS_REG_W28,
+                    "w29": uc.mips_const.UC_MIPS_REG_W29, "W29": uc.mips_const.UC_MIPS_REG_W29,
+                    "w30": uc.mips_const.UC_MIPS_REG_W30, "W30": uc.mips_const.UC_MIPS_REG_W30,
+                    "w31": uc.mips_const.UC_MIPS_REG_W31, "W31": uc.mips_const.UC_MIPS_REG_W31,
+                    "hi": uc.mips_const.UC_MIPS_REG_HI, "HI": uc.mips_const.UC_MIPS_REG_HI,
+                    "lo": uc.mips_const.UC_MIPS_REG_LO, "LO": uc.mips_const.UC_MIPS_REG_LO,
+                    "p0": uc.mips_const.UC_MIPS_REG_P0, "P0": uc.mips_const.UC_MIPS_REG_P0,
+                    "p1": uc.mips_const.UC_MIPS_REG_P1, "P1": uc.mips_const.UC_MIPS_REG_P1,
+                    "p2": uc.mips_const.UC_MIPS_REG_P2, "P2": uc.mips_const.UC_MIPS_REG_P2,
+                    "mpl0": uc.mips_const.UC_MIPS_REG_MPL0, "MPL0": uc.mips_const.UC_MIPS_REG_MPL0,
+                    "mpl1": uc.mips_const.UC_MIPS_REG_MPL1, "MPL1": uc.mips_const.UC_MIPS_REG_MPL1,
+                    "mpl2": uc.mips_const.UC_MIPS_REG_MPL2, "MPL2": uc.mips_const.UC_MIPS_REG_MPL2,
+                    "cp0_config3": uc.mips_const.UC_MIPS_REG_CP0_CONFIG3, "CP0_CONFIG3": uc.mips_const.UC_MIPS_REG_CP0_CONFIG3,
+                    "cp0_userlocal": uc.mips_const.UC_MIPS_REG_CP0_USERLOCAL, "CP0_USERLOCAL": uc.mips_const.UC_MIPS_REG_CP0_USERLOCAL,
+                    "ending": uc.mips_const.UC_MIPS_REG_ENDING, "ENDING": uc.mips_const.UC_MIPS_REG_ENDING,
+                    "zero": uc.mips_const.UC_MIPS_REG_ZERO, "ZERO": uc.mips_const.UC_MIPS_REG_ZERO,
+                    "at": uc.mips_const.UC_MIPS_REG_AT, "AT": uc.mips_const.UC_MIPS_REG_AT,
+                    "v0": uc.mips_const.UC_MIPS_REG_V0, "V0": uc.mips_const.UC_MIPS_REG_V0,
+                    "v1": uc.mips_const.UC_MIPS_REG_V1, "V1": uc.mips_const.UC_MIPS_REG_V1,
+                    "a0": uc.mips_const.UC_MIPS_REG_A0, "A0": uc.mips_const.UC_MIPS_REG_A0,
+                    "a1": uc.mips_const.UC_MIPS_REG_A1, "A1": uc.mips_const.UC_MIPS_REG_A1,
+                    "a2": uc.mips_const.UC_MIPS_REG_A2, "A2": uc.mips_const.UC_MIPS_REG_A2,
+                    "a3": uc.mips_const.UC_MIPS_REG_A3, "A3": uc.mips_const.UC_MIPS_REG_A3,
+                    "t0": uc.mips_const.UC_MIPS_REG_T0, "T0": uc.mips_const.UC_MIPS_REG_T0,
+                    "t1": uc.mips_const.UC_MIPS_REG_T1, "T1": uc.mips_const.UC_MIPS_REG_T1,
+                    "t2": uc.mips_const.UC_MIPS_REG_T2, "T2": uc.mips_const.UC_MIPS_REG_T2,
+                    "t3": uc.mips_const.UC_MIPS_REG_T3, "T3": uc.mips_const.UC_MIPS_REG_T3,
+                    "t4": uc.mips_const.UC_MIPS_REG_T4, "T4": uc.mips_const.UC_MIPS_REG_T4,
+                    "t5": uc.mips_const.UC_MIPS_REG_T5, "T5": uc.mips_const.UC_MIPS_REG_T5,
+                    "t6": uc.mips_const.UC_MIPS_REG_T6, "T6": uc.mips_const.UC_MIPS_REG_T6,
+                    "t7": uc.mips_const.UC_MIPS_REG_T7, "T7": uc.mips_const.UC_MIPS_REG_T7,
+                    "s0": uc.mips_const.UC_MIPS_REG_S0, "S0": uc.mips_const.UC_MIPS_REG_S0,
+                    "s1": uc.mips_const.UC_MIPS_REG_S1, "S1": uc.mips_const.UC_MIPS_REG_S1,
+                    "s2": uc.mips_const.UC_MIPS_REG_S2, "S2": uc.mips_const.UC_MIPS_REG_S2,
+                    "s3": uc.mips_const.UC_MIPS_REG_S3, "S3": uc.mips_const.UC_MIPS_REG_S3,
+                    "s4": uc.mips_const.UC_MIPS_REG_S4, "S4": uc.mips_const.UC_MIPS_REG_S4,
+                    "s5": uc.mips_const.UC_MIPS_REG_S5, "S5": uc.mips_const.UC_MIPS_REG_S5,
+                    "s6": uc.mips_const.UC_MIPS_REG_S6, "S6": uc.mips_const.UC_MIPS_REG_S6,
+                    "s7": uc.mips_const.UC_MIPS_REG_S7, "S7": uc.mips_const.UC_MIPS_REG_S7,
+                    "t8": uc.mips_const.UC_MIPS_REG_T8, "T8": uc.mips_const.UC_MIPS_REG_T8,
+                    "t9": uc.mips_const.UC_MIPS_REG_T9, "T9": uc.mips_const.UC_MIPS_REG_T9,
+                    "k0": uc.mips_const.UC_MIPS_REG_K0, "K0": uc.mips_const.UC_MIPS_REG_K0,
+                    "k1": uc.mips_const.UC_MIPS_REG_K1, "K1": uc.mips_const.UC_MIPS_REG_K1,
+                    "gp": uc.mips_const.UC_MIPS_REG_GP, "GP": uc.mips_const.UC_MIPS_REG_GP,
+                    "sp": uc.mips_const.UC_MIPS_REG_SP, "SP": uc.mips_const.UC_MIPS_REG_SP,
+                    "fp": uc.mips_const.UC_MIPS_REG_FP, "FP": uc.mips_const.UC_MIPS_REG_FP,
+                    "s8": uc.mips_const.UC_MIPS_REG_S8, "S8": uc.mips_const.UC_MIPS_REG_S8,
+                    "ra": uc.mips_const.UC_MIPS_REG_RA, "RA": uc.mips_const.UC_MIPS_REG_RA,
+                    "hi0": uc.mips_const.UC_MIPS_REG_HI0, "HI0": uc.mips_const.UC_MIPS_REG_HI0,
+                    "hi1": uc.mips_const.UC_MIPS_REG_HI1, "HI1": uc.mips_const.UC_MIPS_REG_HI1,
+                    "hi2": uc.mips_const.UC_MIPS_REG_HI2, "HI2": uc.mips_const.UC_MIPS_REG_HI2,
+                    "hi3": uc.mips_const.UC_MIPS_REG_HI3, "HI3": uc.mips_const.UC_MIPS_REG_HI3,
+                    "lo0": uc.mips_const.UC_MIPS_REG_LO0, "LO0": uc.mips_const.UC_MIPS_REG_LO0,
+                    "lo1": uc.mips_const.UC_MIPS_REG_LO1, "LO1": uc.mips_const.UC_MIPS_REG_LO1,
+                    "lo2": uc.mips_const.UC_MIPS_REG_LO2, "LO2": uc.mips_const.UC_MIPS_REG_LO2,
+                    "lo3": uc.mips_const.UC_MIPS_REG_LO3, "LO3": uc.mips_const.UC_MIPS_REG_LO3}
