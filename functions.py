@@ -213,6 +213,4 @@ class Fstrlen(Function):
         if result == expectation:
             return True
         else:
-            print(result)
-            print(expectation)
             return False
