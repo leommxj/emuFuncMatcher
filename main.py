@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 from emu import EmuArm, EmuX86
-from functions import Fstrncpy, Fmemcpy, Fstrncat, Fmempcpy, Fstpncpy, Fmemset, Fstrlen
+from glibc import Fstrncpy, Fmemcpy, Fstrncat, Fmempcpy, Fstpncpy, Fmemset, Fstrlen
 from tqdm import tqdm
 from multiprocessing import Pool
 from functools import partial
