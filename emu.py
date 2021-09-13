@@ -9,9 +9,10 @@ logging.basicConfig(level=logging.WARN)
 
 
 class Emu(object):
-    def __init__(self, arch, ptrSize: int, pageSize: int=1024):
+    def __init__(self, arch, ptrSize: int, pageSize: int=1024, endian='le'):
         self._ptrSize = ptrSize
         self._arch = arch
+        self._endian = endian
         self._pageSize = pageSize
         self._initRegs()
         self._initUc()
@@ -55,7 +56,6 @@ class Emu(object):
     def _initRegs(self):
         raise Exception('need implement')
 
-
     def loadIdb(self, path):
         class Segement(object):
             def __init__(self, start, end, size, name, data):
@@ -92,20 +92,24 @@ class Emu(object):
         raise Exception('need implement')
     
     def getRet(self):
-        return Exception('need implement')
+        raise Exception('need implement')
     
     def setArgv(self, num, value):
-        return Exception('need implement')
-        if self._arch == uc.UC_ARCH_ARM:
-            argRegs = ('R0', 'R1', 'R2', 'R3')
-            if num < len(argRegs):
-                self.writeReg(argRegs[num], value)
-            else:
-                sp = self.readReg('sp')
-                num = num - len(argRegs)
-                self.writeMem(sp+(self._ptrSize/8*num), struct.pack('<I', value))
+        raise Exception('need implement')
+    
+    def _setArgvRegAndStack(self, argRegs, num, value):
+        if num < len(argRegs):
+            self.writeReg(argRegs[num], value)
         else:
-            raise Exception('not implement yet')
+            sp = self.readReg('sp')
+            num = num - len(argRegs)
+            if self._ptrSize == 16:
+                packed = struct.pack('<H', value) if self._endian == 'le' else struct.pack('>H')
+            elif self._ptrSize == 32:
+                packed = struct.pack('<I', value) if self._endian == 'le' else struct.pack('>I')
+            elif self._ptrSize == 64:
+                packed = struct.pack('<Q', value) if self._endian == 'le' else struct.pack('>Q')
+            self.writeMem(sp+(self._ptrSize/8*num), packed)
     
     def setRetAddr(self, addr):
         raise Exception('need implement')
@@ -207,27 +211,9 @@ class EmuArm(Emu):
     def _initUc(self):
         self.target = uc.Uc(self._arch, uc.UC_MODE_ARM)
     
-    def getArgv(self):
-        sp = self.readReg("SP")
-        argv = [
-            self.readReg('R0'),
-            self.readReg('R1'),
-            self.readReg('R2'),
-            self.readReg('R3'),
-            struct.unpack('<I', self.readMem(sp, 4))[0],
-            struct.unpack('<I', self.readMem(sp + 4, 4))[0],
-            struct.unpack('<I', self.readMem(sp + 8, 4))[0],
-            struct.unpack('<I', self.readMem(sp + 12, 4))[0]]
-        return argv
-    
     def setArgv(self, num, value):
         argRegs = ('R0', 'R1', 'R2', 'R3')
-        if num < len(argRegs):
-            self.writeReg(argRegs[num], value)
-        else:
-            sp = self.readReg('sp')
-            num = num - len(argRegs)
-            self.writeMem(sp+(self._ptrSize/8*num), struct.pack('<I', value))
+        self._setArgvRegAndStack(argRegs, num, value)
 
     def getRet(self):
         return self.readReg('R0')
@@ -391,10 +377,14 @@ class EmuArm(Emu):
         else:
             self.logger.fatal("m")
 
-CC_CDECL = 1
+
 class EmuX86(Emu):
+    CC_CDECL = 1
+    CC_STDCALL = 2
+    CC_FASTCALL = 3
+    CC_WIN64 = 4
     def __init__(self, ptrSize, convention=CC_CDECL, pageSize=4096, **kwargs):
-        self._convention = CC_CDECL
+        self._convention = convention
         super().__init__(uc.UC_ARCH_X86, ptrSize, pageSize=pageSize, **kwargs)
 
     def _initUc(self):
@@ -406,47 +396,23 @@ class EmuX86(Emu):
             self.target = uc.Uc(uc.UC_ARCH_X86, uc.UC_MODE_64)
         else:
             raise Exception('Unknwon pointer size')
-
-    
-    def getArgv(self):
-        # need to be fucked again
-        if self._convention == CC_CDECL:
-            argv = [
-            self.getRegVal("rdi"),
-            self.getRegVal("rsi"),
-            self.getRegVal("rdx"),
-            self.getRegVal("rcx"),
-            self.getRegVal("r8"),
-            self.getRegVal("r9"),
-            struct.unpack("<Q", self.readMem(sp, 8))[0],
-            struct.unpack("<Q", self.readMem(sp + 8, 8))[0]]
-        else:
-            raise Exception('Unknown call convention')
-        return argv
     
     def setArgv(self, num, value):
         if self._ptrSize == 16:
             raise Exception('fucked')
         elif self._ptrSize == 32:
-            if self._convention == CC_CDECL:
+            if self._convention == EmuX86.CC_CDECL:
                 argRegs = ()
-                if num < len(argRegs):
-                    self.writeReg(argRegs[num], value)
-                else:
-                    sp = self.readReg('rsp')
-                    num = num - len(argRegs)
-                    self.writeMem(sp+(self._ptrSize/8*num), struct.pack('<I', value))
+                self._setArgvRegAndStack(argRegs, num, value)
             else:
                 raise Exception('Unknown call convention')
         elif self._ptrSize == 64:
-            if self._convention == CC_CDECL:
+            if self._convention == EmuX86.CC_CDECL:
                 argRegs = ('rdi', 'rsi', 'rdx', 'rcx', 'r8', 'r9')
-                if num < len(argRegs):
-                    self.writeReg(argRegs[num], value)
-                else:
-                    sp = self.readReg('rsp')
-                    num = num - len(argRegs)
-                    self.writeMem(sp+(self._ptrSize/8*num), struct.pack('<I', value))
+                self._setArgvRegAndStack(argRegs, num, value)
+            elif self._convention == EmuX86.CC_WIN64:
+                argRegs = ('rcx', 'rdx', 'r8', 'r9')
+                self._setArgvRegAndStack(argRegs, num, value)
             else:
                 raise Exception('Unknown call convention')
 
@@ -521,33 +487,24 @@ class EmuX86(Emu):
 
 
 class EmuMips(Emu):
-    def __init__(self, ptrSize, endian='little', pageSize=4096 , **kwargs):
-        self._endian = endian
-        super().__init__(uc.UC_ARCH_MIPS, ptrSize, pageSize=pageSize, **kwargs)
+    def __init__(self, ptrSize, endian='le', pageSize=4096 , **kwargs):
+        super().__init__(uc.UC_ARCH_MIPS, ptrSize, pageSize=pageSize, endian=endian, **kwargs)
 
     def _initUc(self):
-        if self._ptrSize == 32 and self._endian =='little':
+        if self._ptrSize == 32 and self._endian =='le':
             self.target = uc.Uc(self._arch, uc.UC_MODE_MIPS32|uc.UC_MODE_LITTLE_ENDIAN)
-        elif self._ptrSize == 32 and self._endian =='big':
+        elif self._ptrSize == 32 and self._endian =='be':
             self.target = uc.Uc(self._arch, uc.UC_MODE_MIPS32|uc.UC_MODE_BIG_ENDIAN)
-        elif self._ptrSize == 64 and self._endian =='little':
+        elif self._ptrSize == 64 and self._endian =='le':
             self.target = uc.Uc(self._arch, uc.UC_MODE_MIPS64|uc.UC_MODE_LITTLE_ENDIAN)
-        elif self._ptrSize == 64 and self._endian =='big':
+        elif self._ptrSize == 64 and self._endian =='be':
             self.target = uc.Uc(self._arch, uc.UC_MODE_MIPS64|uc.UC_MODE_BIG_ENDIAN)
         else:
             raise Exception('Unknown Arch')
     
-    def getArgv(self):
-        raise Exception('Unimplement')
-    
     def setArgv(self, num, value):
         argRegs = ('a0', 'a1', 'a2', 'a3')
-        if num < len(argRegs):
-            self.writeReg(argRegs[num], value)
-        else:
-            sp = self.readReg('sp')
-            num = num - len(argRegs)
-            self.writeMem(sp+(self._ptrSize/8*num), struct.pack('<I', value))
+        self._setArgvRegAndStack(argRegs, num, value)
 
     def getRet(self):
         return self.readReg('v0')

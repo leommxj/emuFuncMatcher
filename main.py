@@ -19,7 +19,7 @@ def findAllFunction(idbpath):
     return r
 
 def findArchInfo(idbpath):
-    ''''
+    '''
     Determine Processs Arch/bitness/endian
     learned from https://reverseengineering.stackexchange.com/questions/11396/how-to-get-the-cpu-architecture-via-idapython
     '''
@@ -36,8 +36,16 @@ def findArchInfo(idbpath):
             is_be = inf.is_be()
         except:
             is_be = inf.mf
-        endian = "big" if is_be else "little"
-        return (inf.procname, bits, endian)
+        endian = 'be' if is_be else 'le'
+        if inf.filetype == 11:
+            filetype = 'PE'
+        elif inf.filetype == 25:
+            filetype = 'MACHO'
+        elif inf.filetype == 18:
+            filetype = 'ELF'
+        else:
+            filetype = 'unk'
+        return (inf.procname, bits, endian, filetype)
 
 def initProcEmu(idbpath, initEmu):
     global e
@@ -53,31 +61,24 @@ def testFunc(function, func):
         tqdm.write('{}: 0x{:x}'.format(t.name, func.startEA))
 
 def genInitEmu(idbpath):
-    arch, bitness, endian = findArchInfo(idbpath)
+    arch, bitness, endian, filetype = findArchInfo(idbpath)
     if arch == 'ARM':
-        if bitness == 32 and endian == 'little':
-            initEmu = lambda: EmuArm(32)
+        if bitness == 32 and endian == 'le':
+            initEmu = lambda: EmuArm(32, endian=endian)
         else:
             raise Exception('Unimplement')
     elif arch in ('metapc','8086','80286r','80286p','80386r','80386p','80486r','80486p','80586r','80586p','80686p','k62','p2','p3','athlon','p4','8085'):
-        if bitness == 64 and endian == 'little':
-            initEmu = lambda: EmuX86(64)
+        if bitness in (64, 32) and endian in ('le', ):
+            if filetype == 'PE':
+                initEmu = lambda: EmuX86(bitness, endian=endian, convention=EmuX86.CC_WIN64)
+            else:
+                initEmu = lambda: EmuX86(bitness, endian=endian)
         else:
             raise Exception('Unimplement')
-    elif arch == 'mipsl' and endian == 'little':
-        if bitness == 32:
-            initEmu = lambda: EmuMips(32, endian)
-        elif bitness == 64:
-            initEmu = lambda: EmuMips(64, endian)
-        else:
-            raise Exception('Unknown Arch bitness combination')
-    elif arch == 'mipsb' and endian == 'big':
-        if bitness == 32:
-            initEmu = lambda: EmuMips(32, endian)
-        elif bitness == 64:
-            initEmu = lambda: EmuMips(64, endian)
-        else:
-            raise Exception('Unknown Arch bitness combination')
+    elif arch == 'mipsl' and endian == 'le':
+            initEmu = lambda: EmuMips(bitness, endian)
+    elif arch == 'mipsb' and endian == 'be':
+            initEmu = lambda: EmuMips(bitness, endian)
     else:
         raise Exception('Unimplement')
     return initEmu
