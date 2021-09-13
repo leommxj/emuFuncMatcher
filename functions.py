@@ -15,6 +15,15 @@ class Function(object):
         self.startEa = startEa
         self.endEa = endEa
         self.ownMem = []
+        self.debug = False
+        self.debug_func = None
+    
+    def dlog(self, s):
+        if self.debug == True:
+            if self.debug_func is None:
+                print(s)
+            else:
+                self.debug_func(s)
     
     def __del__(self):
         self.unmapAllMem()

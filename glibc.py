@@ -51,7 +51,7 @@ class Fstpncpy(Fstrncpy):
         if (result == expectation) and (retPtr == dstAddr+expectAddrM):
             return True
         else:
-            #print('result:{}, expect: {}, dstAddr+expectAddrM: 0x{:x}, retPtr: 0x{:x}'.format(result, expectation, dstAddr+expectAddrM, retPtr))
+            self.dlog('result:{}, expect: {}, dstAddr+expectAddrM: 0x{:x}, retPtr: 0x{:x}'.format(result, expectation, dstAddr+expectAddrM, retPtr))
             return False
 
 class Fmemcpy(Fstrncpy):
@@ -71,7 +71,7 @@ class Fmempcpy(Fmemcpy):
         if (result == expectation) and (retPtr == dstAddr+len(expectation)-1):
             return True
         else:
-            #print('result:{}, expect: {}, dstAddr: 0x{:x}, retPtr: 0x{:x}'.format(result, expectation, dstAddr, retPtr))
+            self.dlog('result:{}, expect: {}, dstAddr: 0x{:x}, retPtr: 0x{:x}'.format(result, expectation, dstAddr, retPtr))
             return False
 
 class Fstrncat(Fstrncpy):
