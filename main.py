@@ -2,7 +2,6 @@
 # -*- coding: utf-8 -*-
 
 from emu import EmuArm, EmuX86, EmuMips
-from glibc import Fstrncpy, Fmemcpy, Fstrncat, Fmempcpy, Fstpncpy, Fmemset, Fstrlen
 from tqdm import tqdm
 from multiprocessing import Pool
 from functools import partial
@@ -86,7 +85,11 @@ def genInitEmu(idbpath):
 def main():
     idbpath = sys.argv[1]
     initEmu = genInitEmu(idbpath)
-    libfuncs = [Fstrncpy, Fmemcpy, Fstrncat, Fmempcpy, Fstpncpy, Fmemset, Fstrlen]
+    libfuncs = []
+    from glibc import Fstrncpy, Fmemcpy, Fstrncat, Fmempcpy, Fstpncpy, Fmemset, Fstrlen
+    libfuncs += [Fstrncpy, Fmemcpy, Fstrncat, Fmempcpy, Fstpncpy, Fmemset, Fstrlen]
+    from ntoskrnl import Fmemcpy_s
+    libfuncs += [Fmemcpy_s]
     funcs = findAllFunction(idbpath)
     print('there are {} functions in idb, and {} lib functions to match'.format(len(funcs), len(libfuncs)))
     with Pool(processes=12, initializer=initProcEmu, initargs=(idbpath, initEmu)) as p:
