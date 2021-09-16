@@ -27,7 +27,7 @@ class Fstrncpy(Function):
         if (result == expectation) and (retPtr == dstAddr):
             return True
         else:
-            #print('result:{}, expect: {}, dstAddr: 0x{:x}, retPtr: 0x{:x}'.format(result, expectation, dstAddr, retPtr))
+            self.dlog('result:{}, expect: {}, dstAddr: 0x{:x}, retPtr: 0x{:x}'.format(result, expectation, dstAddr, retPtr))
             return False
 
     def checkOne(self, case):
@@ -37,6 +37,7 @@ class Fstrncpy(Function):
 
 class Fstpncpy(Fstrncpy):
     name = 'stpncpy'
+    argc = 3
     testcases = (
         ((b'\x00'*20, b'aaa', 3), (b'aaa', 3)),
         ((b'\x00'*20, b'a\x00b', 3), (b'a\x00\x00', 1)),
@@ -56,6 +57,7 @@ class Fstpncpy(Fstrncpy):
 
 class Fmemcpy(Fstrncpy):
     name = 'memcpy' # or memmove
+    argc = 3
     testcases = (
         ((b'a'*10, b'aaa', 3), (b'aaaa', )),
         ((b'a'*10, b'a\x00b', 3), (b'a\x00ba', )),
@@ -64,6 +66,7 @@ class Fmemcpy(Fstrncpy):
 
 class Fmempcpy(Fmemcpy):
     name = 'mempcpy'
+    argc = 3
     def retOne(self, caseOut, dstAddr):
         expectation = caseOut[0]
         retPtr = self.emu.getRet()
@@ -76,6 +79,7 @@ class Fmempcpy(Fmemcpy):
 
 class Fstrncat(Fstrncpy):
     name = 'strncat'
+    argc = 3
     testcases = (
         ((b'\x00'*20, b'aaa', 3), (b'aaa', )),
         ((b'\x00'*20, b'a\x00b', 3), (b'a\x00\x00', )),
@@ -85,6 +89,7 @@ class Fstrncat(Fstrncpy):
 
 class Fmemset(Fstrncpy):
     name = 'memset'
+    argc = 3
     testcases = (
         ((b'\x00'*20, ord('a'), 4), (b'aaaa'+b'\x00'*16, )),
         ((b'x'*20, ord('b'), 4), (b'bbbb'+b'x'*16, )),
@@ -102,18 +107,83 @@ class Fmemset(Fstrncpy):
         self.emu.setRetAddr(0xcafebabe)
         return dstAddr
 
+class Fmemcmp(Function):
+    name = 'memcmp'
+    argc = 3
+    testcases = (
+        ((b'aaa\x00\x00bb', b'aaa\x00\x00bb', 7), (0,)),
+        ((b'aabbcc', b'aabddd', 3), (0,)),
+        ((b'aabbcc', b'aabddd', 6), (-1,)),
+        ((b'abc', b'abb', 6), (1,)),
+        ((b'abc\x00\x01efg',b'abc\x00\x01efg', 8), (0,)),
+        ((b'abc\x00\x01afg',b'abc\x00\x01efg', 8), (-1,)),
+    )
+    def setupOne(self, caseIn):
+        a1 = caseIn[0]
+        a2 = caseIn[1]
+        n = caseIn[2]
+
+        self.setArgWithMem(0, len(a1), a1)
+        self.setArgWithMem(1, len(a2), a2)
+        self.setArgWithImm(2, n)
+        self.emu.setRetAddr(0xcafebabe)
+    
+    def retOne(self, caseOut):
+        e = caseOut[0]
+        r = self.emu.getRet()
+        if e < 0:
+            if r&(1<<(self.emu._ptrSize-1)) != 0:
+                return True
+        elif e > 0:
+            if r&((1<<self.emu._ptrSize)-1) > 0:
+                return True
+        else:
+            if r == 0:
+                return True
+        self.dlog('r:0x{:x}, e:{}'.format(r, e))
+        return False
+
+    def checkOne(self, case):
+        self.setupOne(case[0])
+        self.start()
+        return self.retOne(case[1])
+
+class Fstrncmp(Fmemcmp):
+    name = 'strncmp'
+    argc = 3
+    testcases = (
+        ((b'aaa\x00\x00bb', b'aaa\x00\x00bb', 7), (0,)),
+        ((b'aabbcc', b'aabddd', 3), (0,)),
+        ((b'aabbcc', b'aabddd', 6), (-1,)),
+        ((b'a'*8+b'c', b'a'*8+b'b', 9), (1,)),
+        ((b'abc', b'abb', 6), (1,)),
+        ((b'abc\x00\x01afg',b'abc\x00\x01efg', 8), (0,)),
+        ((b'abc', b'abb', 1), (0,)),
+    )
 
 ### Define functions with 2 arguments
-class Fstrcpy(Function):
+class Fstrcpy(Fstrncpy):
     name = 'strcpy'
     argc = 2
     testcases = (
-        ((), ()),
-
+        ((b'\x00'*20, b'aaa', 3), (b'aaa', )),
+        ((b'\x00'*20, b'a\x00b', 3), (b'a\x00\x00', )),
+        ((b'\x00'*20, b'beniceplase', 9), (b'beniceplase\x00', )),
+        ((b'a'*20, b'beniceplase', 9), (b'beniceplase\x00aaaaa', )),
     )
-    def checkOne(self):
-        pass
 
+class Fstrcmp(Fmemcmp):
+    name = 'strcmp' #TODO: differentiate strverscmp
+    argc = 2
+    testcases = (
+        ((b'aaa\x00\x00bb', b'aaa\x00\x00bb', 7), (0,)),
+        ((b'aabbcc', b'aabddd', 3), (-1,)),
+        ((b'aabbcc', b'aabddd', 6), (-1,)),
+        ((b'a'*8+b'c', b'a'*8+b'b', 6), (1,)),
+        ((b'abc', b'abb', 6), (1,)),
+        ((b'abc\x00\x01afg',b'abc\x00\x01efg', 8), (0,)),
+        ((b'abc', b'abb', 1), (1,)),
+    )
 
 ### Define functions with 1 argument
 class Fstrlen(Function):

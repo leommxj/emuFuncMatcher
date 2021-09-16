@@ -82,13 +82,14 @@ def genInitEmu(idbpath):
         raise Exception('Unimplement')
     return initEmu
 
+from glibc import *
+from ntoskrnl import *
+
 def main():
     idbpath = sys.argv[1]
     initEmu = genInitEmu(idbpath)
     libfuncs = []
-    from glibc import Fstrncpy, Fmemcpy, Fstrncat, Fmempcpy, Fstpncpy, Fmemset, Fstrlen
-    libfuncs += [Fstrncpy, Fmemcpy, Fstrncat, Fmempcpy, Fstpncpy, Fmemset, Fstrlen]
-    from ntoskrnl import Fmemcpy_s
+    libfuncs += [Fstrncpy, Fmemcpy, Fstrncat, Fmempcpy, Fstpncpy, Fmemset, Fstrlen, Fstrcpy, Fmemcmp, Fstrcmp, Fstrncmp]
     libfuncs += [Fmemcpy_s]
     funcs = findAllFunction(idbpath)
     print('there are {} functions in idb, and {} lib functions to match'.format(len(funcs), len(libfuncs)))
