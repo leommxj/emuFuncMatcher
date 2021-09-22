@@ -95,7 +95,7 @@ def main():
     libfuncs += [Fstrncpy, Fmemcpy, Fstrncat, Fmempcpy, Fstpncpy, Fmemset, Fstrlen, Fstrcpy, Fmemcmp, Fstrcmp, Fstrncmp]
     libfuncs += [Fmemcpy_s]
     funcs = findAllFunction(idbpath)
-    print('there are {} functions in idb, and {} lib functions to match'.format(len(funcs), len(libfuncs)))
+    tqdm.write('there are {} functions in idb, and {} lib functions to match'.format(len(funcs), len(libfuncs)))
     with Pool(processes=12, initializer=initProcEmu, initargs=(idbpath, initEmu)) as p:
         for f in libfuncs:
             it = tqdm(p.imap(partial(testFunc, f), funcs), total=len(funcs))
