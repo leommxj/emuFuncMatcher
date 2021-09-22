@@ -9,6 +9,9 @@ import idb
 import logging
 import sys
 
+idbfileformatLogger = logging.getLogger('idb.fileformat')
+idbfileformatLogger.setLevel(logging.ERROR)
+
 def findAllFunction(idbpath):
     r = []
     with idb.from_file(idbpath) as db:
