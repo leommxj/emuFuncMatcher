@@ -109,7 +109,7 @@ class Emu(object):
                 packed = struct.pack('<I', value) if self._endian == 'le' else struct.pack('>I')
             elif self._ptrSize == 64:
                 packed = struct.pack('<Q', value) if self._endian == 'le' else struct.pack('>Q')
-            self.writeMem(sp+(self._ptrSize/8*num), packed)
+            self.writeMem(sp+int(self._ptrSize/8*(num+1)), packed)
     
     def setRetAddr(self, addr):
         raise Exception('need implement')
