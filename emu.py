@@ -677,3 +677,53 @@ class EmuMips(Emu):
                     "lo1": uc.mips_const.UC_MIPS_REG_LO1, "LO1": uc.mips_const.UC_MIPS_REG_LO1,
                     "lo2": uc.mips_const.UC_MIPS_REG_LO2, "LO2": uc.mips_const.UC_MIPS_REG_LO2,
                     "lo3": uc.mips_const.UC_MIPS_REG_LO3, "LO3": uc.mips_const.UC_MIPS_REG_LO3}
+
+class EmuPpc(Emu):
+    def __init__(self, ptrSize, endian='le', pageSize=4096 , **kwargs):
+        super().__init__(uc.UC_ARCH_PPC, ptrSize, pageSize=pageSize, endian=endian, **kwargs)
+
+    def _initUc(self):
+        if self._ptrSize == 32 and self._endian =='le':
+            self.target = uc.Uc(self._arch, uc.UC_MODE_PPC32|uc.UC_MODE_LITTLE_ENDIAN)
+        elif self._ptrSize == 32 and self._endian =='be':
+            self.target = uc.Uc(self._arch, uc.UC_MODE_PPC32|uc.UC_MODE_BIG_ENDIAN)
+        elif self._ptrSize == 64 and self._endian =='le':
+            self.target = uc.Uc(self._arch, uc.UC_MODE_PPC64|uc.UC_MODE_LITTLE_ENDIAN)
+        elif self._ptrSize == 64 and self._endian =='be':
+            self.target = uc.Uc(self._arch, uc.UC_MODE_PPC64|uc.UC_MODE_BIG_ENDIAN)
+        else:
+            raise Exception('Unknown Arch')
+    
+    def setArgv(self, num, value):
+        argRegs = ('r3', 'r4', 'r5', 'r6', 'r7', 'r8', 'r9', 'r10')
+        self._setArgvRegAndStack(argRegs, num, value)
+
+    def getRet(self):
+        return self.readReg('r3')
+
+    def setRetAddr(self, addr):
+        self.writeReg('lr', addr)
+    
+    def _initRegs(self):
+        # unicorn 2 and not import by unicorn.py
+        from unicorn import ppc_const
+        self.regs = {"pc": ppc_const.UC_PPC_REG_PC, "PC": ppc_const.UC_PPC_REG_PC,
+                    "sp": ppc_const.UC_PPC_REG_1, "SP": ppc_const.UC_PPC_REG_1,
+                    "lr": ppc_const.UC_PPC_REG_LR, "LR": ppc_const.UC_PPC_REG_LR,
+                    "r0": ppc_const.UC_PPC_REG_0, "r1": ppc_const.UC_PPC_REG_1,
+                    "r2": ppc_const.UC_PPC_REG_2, "r3": ppc_const.UC_PPC_REG_3,
+                    "r4": ppc_const.UC_PPC_REG_4, "r5": ppc_const.UC_PPC_REG_5,
+                    "r6": ppc_const.UC_PPC_REG_6, "r7": ppc_const.UC_PPC_REG_7,
+                    "r8": ppc_const.UC_PPC_REG_8, "r9": ppc_const.UC_PPC_REG_9,
+                    "r10": ppc_const.UC_PPC_REG_10, "r11": ppc_const.UC_PPC_REG_11,
+                    "r12": ppc_const.UC_PPC_REG_12, "r13": ppc_const.UC_PPC_REG_13,
+                    "r14": ppc_const.UC_PPC_REG_14, "r15": ppc_const.UC_PPC_REG_15,
+                    "r16": ppc_const.UC_PPC_REG_16, "r17": ppc_const.UC_PPC_REG_17,
+                    "r18": ppc_const.UC_PPC_REG_18, "r19": ppc_const.UC_PPC_REG_19,
+                    "r20": ppc_const.UC_PPC_REG_20, "r21": ppc_const.UC_PPC_REG_21,
+                    "r22": ppc_const.UC_PPC_REG_22, "r23": ppc_const.UC_PPC_REG_23,
+                    "r24": ppc_const.UC_PPC_REG_24, "r25": ppc_const.UC_PPC_REG_25,
+                    "r26": ppc_const.UC_PPC_REG_26, "r27": ppc_const.UC_PPC_REG_27,
+                    "r28": ppc_const.UC_PPC_REG_28, "r29": ppc_const.UC_PPC_REG_29,
+                    "r30": ppc_const.UC_PPC_REG_30, "r31": ppc_const.UC_PPC_REG_31,
+        }

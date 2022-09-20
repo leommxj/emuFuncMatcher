@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-from emu import EmuArm, EmuX86, EmuMips
+from emu import EmuArm, EmuX86, EmuMips, EmuPpc
 from tqdm import tqdm
 from multiprocessing import Pool
 from functools import partial
@@ -81,6 +81,8 @@ def genInitEmu(idbpath):
             initEmu = lambda: EmuMips(bitness, endian)
     elif arch == 'mipsb' and endian == 'be':
             initEmu = lambda: EmuMips(bitness, endian)
+    elif arch == 'PPC': #or arch == 'PPCL':
+            initEmu = lambda: EmuPpc(bitness, endian)
     else:
         raise Exception('Unimplement')
     return initEmu
